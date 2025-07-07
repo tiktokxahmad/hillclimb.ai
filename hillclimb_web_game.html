@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hill Climb Racing Web – Multi‑Vehicle Edition</title>
+  <style>
+    body { margin: 0; background: #87ceeb; overflow: hidden; }
+    canvas { display: block; margin: 0 auto; background: #87ceeb; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-family: sans-serif;
+      color: white;
+      font-size: 18px;
+      text-shadow: 1px 1px 3px black;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">Vehicle: Car | Fuel: 100 | Coins: 0 | Diamonds: 0</div>
+  <canvas id="gameCanvas" width="800" height="400"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const hud = document.getElementById("hud");
+
+    // --------------------------- Vehicle Definitions ------------------------
+    const vehicles = [
+      { name: "Car",      width: 40, height: 20, color: "red",    jumpPower: -10 },
+      { name: "Bike",     width: 30, height: 15, color: "purple", jumpPower: -12 },
+      { name: "Tank",     width: 60, height: 25, color: "olive",  jumpPower: -8  },
+      { name: "Tractor",  width: 50, height: 22, color: "orange", jumpPower: -9  },
+      { name: "Bus",      width: 70, height: 25, color: "blue",   jumpPower: -7  }
+    ];
+    let vIndex = 0; // current vehicle index
+
+    // --------------------------- Game State --------------------------------
+    let car = {
+      x: 100,
+      y: 300,
+      width: vehicles[0].width,
+      height: vehicles[0].height,
+      vx: 0,
+      vy: 0,
+      ax: 0,
+      ay: 0.5, // gravity
+      rotation: 0,
+      rotationSpeed: 0,
+      onGround: false,
+      color: vehicles[0].color,
+      jumpPower: vehicles[0].jumpPower,
+      name: vehicles[0].name
+    };
+
+    function setVehicle(i) {
+      vIndex = (i + vehicles.length) % vehicles.length;
+      const v = vehicles[vIndex];
+      car.width = v.width;
+      car.height = v.height;
+      car.color = v.color;
+      car.jumpPower = v.jumpPower;
+      car.name = v.name;
+      updateHUD();
+    }
+
+    let terrain = [];
+    let fuel = 100;
+    let coins = 0;
+    let diamonds = 0;
+
+    const pickups = [];
+
+    for (let i = 0; i < 4000; i++) {
+      terrain.push(300 + 50 * Math.sin(i * 0.01) + 20 * Math.sin(i * 0.03));
+      if (i % 150 === 0) pickups.push({ type: "coin", x: i, y: terrain[i] - 20 });
+      if (i % 500 === 0) pickups.push({ type: "diamond", x: i, y: terrain[i] - 25 });
+      if (i % 300 === 0) pickups.push({ type: "fuel", x: i, y: terrain[i] - 15 });
+    }
+
+    let offset = 0;
+
+    // --------------------------- Rendering ---------------------------------
+    function drawTerrain() {
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height);
+      for (let i = 0; i < canvas.width; i++) {
+        const y = terrain[i + offset] || 400;
+        ctx.lineTo(i, y);
+      }
+      ctx.lineTo(canvas.width, canvas.height);
+      ctx.fillStyle = "green";
+      ctx.fill();
+    }
+
+    function drawCar() {
+      ctx.save();
+      ctx.translate(100, car.y);
+      ctx.rotate(car.rotation);
+      ctx.fillStyle = car.color;
+      ctx.fillRect(-car.width / 2, -car.height / 2, car.width, car.height);
+      ctx.restore();
+    }
+
+    function drawPickups() {
+      pickups.forEach(p => {
+        const px = p.x - offset;
+        if (px < -30 || px > canvas.width + 30) return;
+        ctx.beginPath();
+        if (p.type === "coin") {
+          ctx.fillStyle = "yellow";
+          ctx.arc(px, p.y, 8, 0, 2 * Math.PI);
+        } else if (p.type === "diamond") {
+          ctx.fillStyle = "cyan";
+          ctx.moveTo(px, p.y - 8);
+          ctx.lineTo(px - 6, p.y);
+          ctx.lineTo(px, p.y + 8);
+          ctx.lineTo(px + 6, p.y);
+          ctx.closePath();
+        } else if (p.type === "fuel") {
+          ctx.fillStyle = "orange";
+          ctx.rect(px - 6, p.y - 10, 12, 20);
+        }
+        ctx.fill();
+      });
+    }
+
+    // --------------------------- Game Logic --------------------------------
+    function checkPickups() {
+      for (let i = pickups.length - 1; i >= 0; i--) {
+        const p = pickups[i];
+        const px = p.x - offset;
+        const dx = px - 100;
+        const dy = p.y - car.y;
+        if (Math.abs(dx) < car.width / 2 && Math.abs(dy) < car.height / 2) {
+          if (p.type === "coin") coins++;
+          else if (p.type === "diamond") diamonds++;
+          else if (p.type === "fuel") fuel = Math.min(100, fuel + 30);
+          pickups.splice(i, 1);
+        }
+      }
+    }
+
+    function updateHUD() {
+      hud.textContent = `Vehicle: ${car.name} | Fuel: ${fuel.toFixed(0)} | Coins: ${coins} | Diamonds: ${diamonds}`;
+    }
+
+    function updatePhysics() {
+      const groundY = terrain[offset + 100] || 400;
+
+      car.vy += car.ay;
+      car.y += car.vy;
+
+      if (car.y >= groundY) {
+        car.y = groundY;
+        car.vy = 0;
+        car.onGround = true;
+      } else {
+        car.onGround = false;
+      }
+
+      // rotation damping
+      if (car.onGround) {
+        car.rotation *= 0.9;
+      } else {
+        car.rotation += car.rotationSpeed;
+      }
+    }
+
+    function update() {
+      offset += 2;
+      fuel -= 0.1;
+      if (fuel < 0) fuel = 0;
+
+      updatePhysics();
+      checkPickups();
+      updateHUD();
+    }
+
+    // --------------------------- Main Loop ---------------------------------
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawTerrain();
+      drawPickups();
+      drawCar();
+      update();
+      if (fuel > 0) requestAnimationFrame(gameLoop);
+      else alert("Out of fuel!");
+    }
+
+    // --------------------------- Controls ----------------------------------
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space" && car.onGround) {
+        car.vy = car.jumpPower;
+        car.rotationSpeed = 0.05;
+      }
+      // Cycle vehicles with keys 1‑5 or N / ArrowRight
+      if (e.code === "Digit1") setVehicle(0);
+      if (e.code === "Digit2") setVehicle(1);
+      if (e.code === "Digit3") setVehicle(2);
+      if (e.code === "Digit4") setVehicle(3);
+      if (e.code === "Digit5") setVehicle(4);
+      if (e.code === "KeyN" || e.code === "ArrowRight") setVehicle(vIndex + 1);
+    });
+
+    updateHUD();
+    gameLoop();
+  </script>
+</body>
+</html>
